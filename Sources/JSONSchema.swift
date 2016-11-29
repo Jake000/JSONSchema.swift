@@ -9,13 +9,13 @@
 import Foundation
 
 public enum Type: Swift.String {
-  case Object = "object"
-  case Array = "array"
-  case String = "string"
-  case Integer = "integer"
-  case Number = "number"
-  case Boolean = "boolean"
-  case Null = "null"
+  case object = "object"
+  case array = "array"
+  case string = "string"
+  case integer = "integer"
+  case number = "number"
+  case boolean = "boolean"
+  case null = "null"
 }
 
 extension String {
@@ -70,7 +70,7 @@ public struct Schema {
     return result
   }
 
-  func validatorForReference(_ reference:String) -> Validator {
+  func validator(for reference:String) -> Validator {
     // TODO: Rewrite this whole block: https://github.com/kylef/JSONSchema.swift/issues/12
 
     if let reference = reference.stringByRemovingPrefix("#") {  // Document relative
@@ -116,7 +116,7 @@ func validators(_ root: Schema) -> (_ schema: [String:Any]) -> [Validator] {
     var validators = [Validator]()
 
     if let ref = schema["$ref"] as? String {
-      validators.append(root.validatorForReference(ref))
+      validators.append(root.validator(for: ref))
     }
 
     if let type = schema["type"] {
@@ -199,7 +199,7 @@ func validators(_ root: Schema) -> (_ schema: [String:Any]) -> [Validator] {
           return flatten(document.map(itemsValidators))
         }
 
-        return .Valid
+        return .valid
       }
 
       validators.append(validateItems)
@@ -236,7 +236,7 @@ func validators(_ root: Schema) -> (_ schema: [String:Any]) -> [Validator] {
           return flatten(results)
         }
 
-        return .Valid
+        return .valid
       }
 
       validators.append(validateItems)
@@ -292,7 +292,7 @@ func validators(_ root: Schema) -> (_ schema: [String:Any]) -> [Validator] {
           }
         }
 
-        return .Valid
+        return .valid
       }
     }
 
@@ -304,12 +304,12 @@ func validators(_ root: Schema) -> (_ schema: [String:Any]) -> [Validator] {
               if value[dependency] == nil {
                 return .invalid(["'\(key)' is missing it's dependency of '\(dependency)'"])
               }
-              return .Valid
+              return .valid
             })
           }
         }
 
-        return .Valid
+        return .valid
       }
     }
 

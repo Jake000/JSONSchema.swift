@@ -32,15 +32,15 @@ class JSONSchemaTests: XCTestCase {
   }
 
   func testType() {
-    XCTAssertEqual(schema.type!, [Type.Object])
+    XCTAssertEqual(schema.type!, [Type.object])
   }
 
   func testSuccessfulValidation() {
-    XCTAssertTrue(schema.validate([String:Any]()).valid)
+    XCTAssertTrue(schema.validate([String:Any]()).isValid)
   }
 
   func testUnsuccessfulValidation() {
-    XCTAssertFalse(schema.validate([String]()).valid)
+    XCTAssertFalse(schema.validate([String]()).isValid)
   }
 
   func testReadme() {
@@ -53,7 +53,7 @@ class JSONSchemaTests: XCTestCase {
       "required": ["name"],
     ])
 
-    XCTAssertTrue(schema.validate(["name": "Eggs", "price": 34.99]).valid)
-    XCTAssertFalse(schema.validate(["price": 34.99]).valid)
+    XCTAssertTrue(schema.validate(["name": "Eggs", "price": 34.99]).isValid)
+    XCTAssertFalse(schema.validate(["price": 34.99]).isValid)
   }
 }

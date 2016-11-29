@@ -107,10 +107,10 @@ func makeAssertions(_ c:Case) -> ([Assertion]) {
     return ("\(c.description) \(test.description)", {
       let result = validate(test.data, schema: c.schema)
       switch result {
-      case .Valid:
-        XCTAssertEqual(result.valid, test.value, "Result is valid")
+      case .valid:
+        XCTAssertEqual(result.isValid, test.value, "Result is valid")
       case .invalid(let errors):
-        XCTAssertEqual(result.valid, test.value, "Failed validation: \(errors)")
+        XCTAssertEqual(result.isValid, test.value, "Failed validation: \(errors)")
       }
     })
   }
