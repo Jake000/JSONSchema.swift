@@ -16,11 +16,11 @@ class JSONSchemaTests: XCTestCase {
   override func setUp() {
     super.setUp()
 
-    schema = Schema([
+    schema = Schema(SchemaType([
       "title": "Product",
       "description": "A product from Acme's catalog",
       "type": "object",
-    ])
+    ]))
   }
 
   func testTitle() {
@@ -44,14 +44,14 @@ class JSONSchemaTests: XCTestCase {
   }
 
   func testReadme() {
-    let schema = Schema([
+    let schema = Schema(SchemaType([
       "type": "object",
       "properties": [
         "name": ["type": "string"],
         "price": ["type": "number"],
       ],
       "required": ["name"],
-    ])
+    ]))
 
     XCTAssertTrue(schema.validate(["name": "Eggs", "price": 34.99]).isValid)
     XCTAssertFalse(schema.validate(["price": 34.99]).isValid)

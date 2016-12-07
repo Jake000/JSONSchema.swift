@@ -121,10 +121,10 @@ public struct InvalidIPError: LocalizedError {
 
 public struct ReferenceNotFoundError: LocalizedError {
   public let reference: String
-  public let component: String
+  public let component: SchemaKey
   
   public var localizedDescription: String {
-    return String.localizedStringWithFormat(NSLocalizedString("reference_not_found_format", tableName: "JSONSchema", value: "Reference nt found '%1$@' in '%2$@'.", comment: "Reference not found"), component, reference)
+    return String.localizedStringWithFormat(NSLocalizedString("reference_not_found_format", tableName: "JSONSchema", value: "Reference nt found '%1$@' in '%2$@'.", comment: "Reference not found"), component.rawValue, reference)
   }
 }
 

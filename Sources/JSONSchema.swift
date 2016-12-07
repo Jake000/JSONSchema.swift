@@ -26,14 +26,57 @@ extension String {
   }
 }
 
-public typealias SchemaType     = [String: Any]
-public typealias PropertiesType = [String: Any]
+public enum SchemaKey: String {
+  case title = "title"
+  case description = "description"
+  case type = "type"
+  case reference = "$ref"
+  case allOf = "allOf"
+  case anyOf = "anyOf"
+  case oneOf = "oneOf"
+  case not = "not"
+  case `enum` = "enum"
+  case maximumLength = "maxLength"
+  case minimumLength = "minLength"
+  case pattern = "pattern"
+  case multipleOf = "multipleOf"
+  case minimum = "minimum"
+  case maximum = "maximum"
+  case minimumItems = "minItems"
+  case maximumItems = "maxItems"
+  case exclusiveMinimum = "exclusiveMinimum"
+  case exclusiveMaximum = "exclusiveMaximum"
+  case uniqueItems = "uniqueItems"
+  case items = "items"
+  case additionalItems = "additionalItems"
+  case maximumProperties = "maxProperties"
+  case minimumProperties = "minProperties"
+  case required = "required"
+  case properties = "properties"
+  case patternProperties = "patternProperties"
+  case additionalProperties = "additionalProperties"
+  case dependencies = "dependencies"
+  case format = "format"
+}
+
+public typealias JSON = [String: Any]
+
+public struct SchemaType {
+  let data: [String: Any]
+  public init(_ data: [String: Any]) {
+    self.data = data
+  }
+  
+  public subscript(key: SchemaKey) -> Any? {
+    return data[key.rawValue]
+  }
+}
 
 public struct Schema {
   public let title:       String?
   public let description: String?
   public let type:        [Type]?
-  public let properties:  PropertiesType?
+  public let properties:  JSON?
   
   /// validation formats, currently private. If anyone wants to add custom please make a PR to make this public ;)
   let formats: [String: Validator]
@@ -41,13 +84,13 @@ public struct Schema {
   
   public init(_ schema: SchemaType) {
     self.schema      = schema
-    self.title       = schema["title"]       as? String
-    self.description = schema["description"] as? String
-    self.properties  = schema["properties"]  as? PropertiesType
+    self.title       = schema[.title]       as? String
+    self.description = schema[.description] as? String
+    self.properties  = schema[.properties]  as? JSON
     
-    if let type = schema["type"] as? String {
+    if let type = schema[.type] as? String {
       self.type = Type(rawValue: type).map { [$0] } ?? []
-    } else if let types = schema["type"] as? [String] {
+    } else if let types = schema[.type] as? [String] {
       self.type = types.flatMap { Type(rawValue: $0) }
     } else {
       self.type = []
@@ -72,18 +115,18 @@ public struct Schema {
       if let tmp = reference.removePrefix("/"), let reference = (tmp as NSString).removingPercentEncoding {
         var components = reference.components(separatedBy: "/")
         var schema = self.schema
-        while let component = components.first {
+        while let c = components.first, let component = SchemaKey(rawValue: c) {
           components.remove(at: components.startIndex)
           
-          if let subschema = schema[component] as? SchemaType {
-            schema = subschema
+          if let subschema = schema[component] as? JSON {
+            schema = SchemaType(subschema)
             continue
-          } else if let schemas = schema[component] as? [SchemaType] {
+          } else if let schemas = schema[component] as? [JSON] {
             if let component = components.first, let index = Int(component) {
               components.remove(at: components.startIndex)
               
               if schemas.count > index {
-                schema = schemas[index]
+                schema = SchemaType(schemas[index])
                 continue
               }
             }
@@ -110,84 +153,94 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
   return { schema in
     var validators = [Validator]()
     
-    if let ref = schema["$ref"] as? String {
+    if let ref = schema[.reference] as? String {
       validators.append(root.validator(for: ref))
     }
     
-    if let type = schema["type"] {
+    if let type = schema[.type] {
       // Rewrite this and most of the validator to use the `type` property, see https://github.com/kylef/JSONSchema.swift/issues/12
       validators.append(validateType(type))
     }
     
-    if let allOf = schema["allOf"] as? [SchemaType] {
-      validators += allOf.map(JSONSchema.validators(root)).reduce([], +)
+    if let allOf = schema[.allOf] as? [JSON] {
+      validators += allOf
+        .map { SchemaType($0) }
+        .map(JSONSchema.validators(root))
+        .reduce([], +)
     }
     
-    if let anyOfSchemas = schema["anyOf"] as? [SchemaType] {
-      let anyOfValidators = anyOfSchemas.map(JSONSchema.validators(root)).map(allOf) as [Validator]
+    if let anyOfSchemas = schema[.anyOf] as? [JSON] {
+      let anyOfValidators = anyOfSchemas
+        .map { SchemaType($0) }
+        .map(JSONSchema.validators(root))
+        .map(allOf) as [Validator]
+      
       validators.append(anyOf(anyOfValidators))
     }
     
-    if let oneOfSchemas = schema["oneOf"] as? [SchemaType] {
-      let oneOfValidators = oneOfSchemas.map(JSONSchema.validators(root)).map(allOf) as [Validator]
+    if let oneOfSchemas = schema[.oneOf] as? [JSON] {
+      let oneOfValidators = oneOfSchemas
+        .map { SchemaType($0) }
+        .map(JSONSchema.validators(root))
+        .map(allOf) as [Validator]
       validators.append(oneOf(oneOfValidators))
     }
     
-    if let notSchema = schema["not"] as? SchemaType {
-      let notValidator = allOf(JSONSchema.validators(root)(notSchema))
+    if let notSchema = schema[.not] as? JSON {
+      let notValidator = allOf(JSONSchema.validators(root)(SchemaType(notSchema)))
       validators.append(not(notValidator))
     }
     
-    if let enumValues = schema["enum"] as? [Any] {
+    if let enumValues = schema[.enum] as? [Any] {
       validators.append(validateEnum(enumValues))
     }
     
     // String
     
-    if let maxLength = schema["maxLength"] as? Int {
+    if let maxLength = schema[.maximumLength] as? Int {
       validators.append(validateLength(<=, length: maxLength, error: LengthError(length: maxLength, itemType: .string, comparison: .tooLarge)))
     }
     
-    if let minLength = schema["minLength"] as? Int {
+    if let minLength = schema[.minimumLength] as? Int {
       validators.append(validateLength(>=, length: minLength, error: LengthError(length: minLength, itemType: .string, comparison: .tooSmall)))
     }
     
-    if let pattern = schema["pattern"] as? String {
+    if let pattern = schema[.pattern] as? String {
       validators.append(validatePattern(pattern))
     }
     
     // Numerical
     
-    if let multipleOf = schema["multipleOf"] as? Double {
+    if let multipleOf = schema[.multipleOf] as? Double {
       validators.append(validateMultipleOf(multipleOf))
     }
     
-    if let minimum = schema["minimum"] as? Double {
-      validators.append(validateNumericLength(minimum, comparator: >=, exclusiveComparator: >, exclusive: schema["exclusiveMinimum"] as? Bool, error: ValueBoundsError(bounds: minimum, comparison: .tooSmall)))
+    if let minimum = schema[.minimum] as? Double {
+      validators.append(validateNumericLength(minimum, comparator: >=, exclusiveComparator: >, exclusive: schema[.exclusiveMinimum] as? Bool, error: ValueBoundsError(bounds: minimum, comparison: .tooSmall)))
     }
     
-    if let maximum = schema["maximum"] as? Double {
-      validators.append(validateNumericLength(maximum, comparator: <=, exclusiveComparator: <, exclusive: schema["exclusiveMaximum"] as? Bool, error: ValueBoundsError(bounds: maximum, comparison: .tooLarge)))
+    if let maximum = schema[.maximum] as? Double {
+      validators.append(validateNumericLength(maximum, comparator: <=, exclusiveComparator: <, exclusive: schema[.exclusiveMaximum] as? Bool, error: ValueBoundsError(bounds: maximum, comparison: .tooLarge)))
     }
     
     // Array
     
-    if let minItems = schema["minItems"] as? Int {
+    if let minItems = schema[.minimumItems] as? Int {
       validators.append(validateArrayLength(minItems, comparator: >=, error: LengthError(length: minItems, itemType: .array, comparison: .tooSmall)))
     }
     
-    if let maxItems = schema["maxItems"] as? Int {
+    if let maxItems = schema[.maximumItems] as? Int {
       validators.append(validateArrayLength(maxItems, comparator: <=, error: LengthError(length: maxItems, itemType: .array, comparison: .tooLarge)))
     }
     
-    if let uniqueItems = schema["uniqueItems"] as? Bool {
+    if let uniqueItems = schema[.uniqueItems] as? Bool {
       if uniqueItems {
         validators.append(validateUniqueItems)
       }
     }
     
-    if let items = schema["items"] as? SchemaType {
-      let itemsValidators = allOf(JSONSchema.validators(root)(items))
+    if let items = schema[.items] as? JSON {
+      let itemsValidators = allOf(JSONSchema.validators(root)(SchemaType(items)))
       
       func validateItems(_ document: Any) -> ValidationResult {
         if let document = document as? [Any] {
@@ -198,10 +251,10 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
       }
       
       validators.append(validateItems)
-    } else if let items = schema["items"] as? [SchemaType] {
+    } else if let items = schema[.items] as? [JSON] {
       func createAdditionalItemsValidator(_ additionalItems: Any?) -> Validator {
-        if let additionalItems = additionalItems as? SchemaType {
-          return allOf(JSONSchema.validators(root)(additionalItems))
+        if let additionalItems = additionalItems as? JSON {
+          return allOf(JSONSchema.validators(root)(SchemaType(additionalItems)))
         }
         
         let additionalItems = additionalItems as? Bool ?? true
@@ -212,8 +265,8 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
         return invalidValidation(AdditionalPropertiesError(itemType: .array))
       }
       
-      let additionalItemsValidator = createAdditionalItemsValidator(schema["additionalItems"])
-      let itemValidators = items.map(JSONSchema.validators(root))
+      let additionalItemsValidator = createAdditionalItemsValidator(schema[.additionalItems])
+      let itemValidators = items.map { SchemaType($0) }.map(JSONSchema.validators(root))
       
       func validateItems(_ value: Any) -> ValidationResult {
         if let value = value as? [Any] {
@@ -237,22 +290,22 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
       validators.append(validateItems)
     }
     
-    if let maxProperties = schema["maxProperties"] as? Int {
+    if let maxProperties = schema[.maximumProperties] as? Int {
       validators.append(validatePropertiesLength(maxProperties, comparator: >=, error: LengthError(length: maxProperties, itemType: .properties, comparison: .tooLarge)))
     }
     
-    if let minProperties = schema["minProperties"] as? Int {
+    if let minProperties = schema[.minimumProperties] as? Int {
       validators.append(validatePropertiesLength(minProperties, comparator: <=, error: LengthError(length: minProperties, itemType: .properties, comparison: .tooSmall)))
     }
     
-    if let required = schema["required"] as? [String] {
+    if let required = schema[.required] as? [String] {
       validators.append(validateRequired(required))
     }
     
-    if (schema["properties"] != nil) || (schema["patternProperties"] != nil) || (schema["additionalProperties"] != nil) {
+    if (schema[.properties] != nil) || (schema[.patternProperties] != nil) || (schema[.additionalProperties] != nil) {
       func createAdditionalPropertiesValidator(_ additionalProperties: Any?) -> Validator {
-        if let additionalProperties = additionalProperties as? PropertiesType {
-          return allOf(JSONSchema.validators(root)(additionalProperties))
+        if let additionalProperties = additionalProperties as? JSON {
+          return allOf(JSONSchema.validators(root)(SchemaType(additionalProperties)))
         }
         
         let additionalProperties = additionalProperties as? Bool ?? true
@@ -263,25 +316,25 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
         return invalidValidation(AdditionalPropertiesError(itemType: .object))
       }
       
-      func createPropertiesValidators(_ properties: [String: PropertiesType]?) -> [String: Validator]? {
+      func createPropertiesValidators(_ properties: [String: JSON]?) -> [String: Validator]? {
         if let properties = properties {
-          return Dictionary(properties.keys.map {
-            key in (key, allOf(JSONSchema.validators(root)(properties[key]!)))
+          return Dictionary(properties.map { key, value in
+            (key, allOf(JSONSchema.validators(root)(SchemaType(value))))
           })
         }
         
         return nil
       }
       
-      let additionalPropertyValidator = createAdditionalPropertiesValidator(schema["additionalProperties"])
-      let properties = createPropertiesValidators(schema["properties"] as? [String: PropertiesType])
-      let patternProperties = createPropertiesValidators(schema["patternProperties"] as? [String: PropertiesType])
+      let additionalPropertyValidator = createAdditionalPropertiesValidator(schema[.additionalProperties])
+      let properties = createPropertiesValidators(schema[.properties] as? [String: JSON])
+      let patternProperties = createPropertiesValidators(schema[.patternProperties] as? [String: JSON])
       validators.append(validateProperties(properties, patternProperties: patternProperties, additionalProperties: additionalPropertyValidator))
     }
     
     func validateDependency(_ key: String, validator: @escaping Validator) -> (_ value: Any) -> ValidationResult {
       return { value in
-        if let value = value as? PropertiesType, let _ = value[key] {
+        if let value = value as? JSON, let _ = value[key] {
           return validator(value)
         }
         return .valid
@@ -290,7 +343,7 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
     
     func validateDependencies(_ key: String, dependencies: [String]) -> (_ value: Any) -> ValidationResult {
       return { value in
-        if let value = value as? PropertiesType, let _ = value[key] {
+        if let value = value as? JSON, let _ = value[key] {
           return dependencies.map { dependency in
             if value[dependency] == nil {
               return .invalid([DependencyMissingError(key: key, dependency: dependency)])
@@ -302,10 +355,10 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
       }
     }
     
-    if let dependencies = schema["dependencies"] as? PropertiesType {
+    if let dependencies = schema[.dependencies] as? JSON {
       for (key, dependencies) in dependencies {
-        if let dependencies = dependencies as? PropertiesType {
-          let schema = allOf(JSONSchema.validators(root)(dependencies))
+        if let dependencies = dependencies as? JSON {
+          let schema = allOf(JSONSchema.validators(root)(SchemaType(dependencies)))
           validators.append(validateDependency(key, validator: schema))
         } else if let dependencies = dependencies as? [String] {
           validators.append(validateDependencies(key, dependencies: dependencies))
@@ -313,7 +366,7 @@ func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
       }
     }
     
-    if let format = schema["format"] as? String {
+    if let format = schema[.format] as? String {
       if let validator = root.formats[format] {
         validators.append(validator)
       } else {
