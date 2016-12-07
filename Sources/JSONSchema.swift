@@ -9,13 +9,13 @@
 import Foundation
 
 public enum Type: String {
-  case object = "object"
-  case array = "array"
-  case string = "string"
+  case object  = "object"
+  case array   = "array"
+  case string  = "string"
   case integer = "integer"
-  case number = "number"
+  case number  = "number"
   case boolean = "boolean"
-  case null = "null"
+  case null    = "null"
 }
 
 extension String {
@@ -26,36 +26,34 @@ extension String {
   }
 }
 
+public typealias SchemaType     = [String: Any]
+public typealias PropertiesType = [String: Any]
+
 public struct Schema {
-  public let title:String?
-  public let description:String?
-  
-  public let type: [Type]?
+  public let title:       String?
+  public let description: String?
+  public let type:        [Type]?
+  public let properties:  PropertiesType?
   
   /// validation formats, currently private. If anyone wants to add custom please make a PR to make this public ;)
   let formats: [String: Validator]
+  let schema:  SchemaType
   
-  let schema: [String: Any]
-  
-  public init(_ schema: [String: Any]) {
-    title = schema["title"] as? String
-    description = schema["description"] as? String
+  public init(_ schema: SchemaType) {
+    self.schema      = schema
+    self.title       = schema["title"]       as? String
+    self.description = schema["description"] as? String
+    self.properties  = schema["properties"]  as? PropertiesType
     
     if let type = schema["type"] as? String {
-      if let type = Type(rawValue: type) {
-        self.type = [type]
-      } else {
-        self.type = []
-      }
+      self.type = Type(rawValue: type).map { [$0] } ?? []
     } else if let types = schema["type"] as? [String] {
-      self.type = types.map { Type(rawValue: $0) }.filter { $0 != nil }.map { $0! }
+      self.type = types.flatMap { Type(rawValue: $0) }
     } else {
       self.type = []
     }
     
-    self.schema = schema
-    
-    formats = [
+    self.formats = [
       "ipv4": validateIPv4,
       "ipv6": validateIPv6,
     ]
@@ -67,7 +65,7 @@ public struct Schema {
     return result
   }
   
-  func validator(for reference:String) -> Validator {
+  func validator(for reference: String) -> Validator {
     // TODO: Rewrite this whole block: https://github.com/kylef/JSONSchema.swift/issues/12
     
     if let reference = reference.removePrefix("#") {  // Document relative
@@ -77,10 +75,10 @@ public struct Schema {
         while let component = components.first {
           components.remove(at: components.startIndex)
           
-          if let subschema = schema[component] as? [String: Any] {
+          if let subschema = schema[component] as? SchemaType {
             schema = subschema
             continue
-          } else if let schemas = schema[component] as? [[String: Any]] {
+          } else if let schemas = schema[component] as? [SchemaType] {
             if let component = components.first, let index = Int(component) {
               components.remove(at: components.startIndex)
               
@@ -108,7 +106,7 @@ public struct Schema {
 }
 
 /// Returns a set of validators for a schema and document
-func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
+func validators(_ root: Schema) -> (_ schema: SchemaType) -> [Validator] {
   return { schema in
     var validators = [Validator]()
     
@@ -121,21 +119,21 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
       validators.append(validateType(type))
     }
     
-    if let allOf = schema["allOf"] as? [[String: Any]] {
+    if let allOf = schema["allOf"] as? [SchemaType] {
       validators += allOf.map(JSONSchema.validators(root)).reduce([], +)
     }
     
-    if let anyOfSchemas = schema["anyOf"] as? [[String: Any]] {
+    if let anyOfSchemas = schema["anyOf"] as? [SchemaType] {
       let anyOfValidators = anyOfSchemas.map(JSONSchema.validators(root)).map(allOf) as [Validator]
       validators.append(anyOf(anyOfValidators))
     }
     
-    if let oneOfSchemas = schema["oneOf"] as? [[String: Any]] {
+    if let oneOfSchemas = schema["oneOf"] as? [SchemaType] {
       let oneOfValidators = oneOfSchemas.map(JSONSchema.validators(root)).map(allOf) as [Validator]
       validators.append(oneOf(oneOfValidators))
     }
     
-    if let notSchema = schema["not"] as? [String: Any] {
+    if let notSchema = schema["not"] as? SchemaType {
       let notValidator = allOf(JSONSchema.validators(root)(notSchema))
       validators.append(not(notValidator))
     }
@@ -188,7 +186,7 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
       }
     }
     
-    if let items = schema["items"] as? [String: Any] {
+    if let items = schema["items"] as? SchemaType {
       let itemsValidators = allOf(JSONSchema.validators(root)(items))
       
       func validateItems(_ document: Any) -> ValidationResult {
@@ -200,9 +198,9 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
       }
       
       validators.append(validateItems)
-    } else if let items = schema["items"] as? [[String: Any]] {
+    } else if let items = schema["items"] as? [SchemaType] {
       func createAdditionalItemsValidator(_ additionalItems: Any?) -> Validator {
-        if let additionalItems = additionalItems as? [String: Any] {
+        if let additionalItems = additionalItems as? SchemaType {
           return allOf(JSONSchema.validators(root)(additionalItems))
         }
         
@@ -253,7 +251,7 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
     
     if (schema["properties"] != nil) || (schema["patternProperties"] != nil) || (schema["additionalProperties"] != nil) {
       func createAdditionalPropertiesValidator(_ additionalProperties: Any?) -> Validator {
-        if let additionalProperties = additionalProperties as? [String: Any] {
+        if let additionalProperties = additionalProperties as? PropertiesType {
           return allOf(JSONSchema.validators(root)(additionalProperties))
         }
         
@@ -265,7 +263,7 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
         return invalidValidation(AdditionalPropertiesError(itemType: .object))
       }
       
-      func createPropertiesValidators(_ properties: [String: [String: Any]]?) -> [String: Validator]? {
+      func createPropertiesValidators(_ properties: [String: PropertiesType]?) -> [String: Validator]? {
         if let properties = properties {
           return Dictionary(properties.keys.map {
             key in (key, allOf(JSONSchema.validators(root)(properties[key]!)))
@@ -276,14 +274,14 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
       }
       
       let additionalPropertyValidator = createAdditionalPropertiesValidator(schema["additionalProperties"])
-      let properties = createPropertiesValidators(schema["properties"] as? [String: [String: Any]])
-      let patternProperties = createPropertiesValidators(schema["patternProperties"] as? [String: [String: Any]])
+      let properties = createPropertiesValidators(schema["properties"] as? [String: PropertiesType])
+      let patternProperties = createPropertiesValidators(schema["patternProperties"] as? [String: PropertiesType])
       validators.append(validateProperties(properties, patternProperties: patternProperties, additionalProperties: additionalPropertyValidator))
     }
     
     func validateDependency(_ key: String, validator: @escaping Validator) -> (_ value: Any) -> ValidationResult {
       return { value in
-        if let value = value as? [String: Any], let _ = value[key] {
+        if let value = value as? PropertiesType, let _ = value[key] {
           return validator(value)
         }
         return .valid
@@ -292,7 +290,7 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
     
     func validateDependencies(_ key: String, dependencies: [String]) -> (_ value: Any) -> ValidationResult {
       return { value in
-        if let value = value as? [String: Any], let _ = value[key] {
+        if let value = value as? PropertiesType, let _ = value[key] {
           return dependencies.map { dependency in
             if value[dependency] == nil {
               return .invalid([DependencyMissingError(key: key, dependency: dependency)])
@@ -304,9 +302,9 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
       }
     }
     
-    if let dependencies = schema["dependencies"] as? [String: Any] {
+    if let dependencies = schema["dependencies"] as? PropertiesType {
       for (key, dependencies) in dependencies {
-        if let dependencies = dependencies as? [String: Any] {
+        if let dependencies = dependencies as? PropertiesType {
           let schema = allOf(JSONSchema.validators(root)(dependencies))
           validators.append(validateDependency(key, validator: schema))
         } else if let dependencies = dependencies as? [String] {
@@ -327,7 +325,7 @@ func validators(_ root: Schema) -> (_ schema: [String: Any]) -> [Validator] {
   }
 }
 
-public func validate(_ value: Any, schema: [String: Any]) -> ValidationResult {
+public func validate(_ value: Any, schema: SchemaType) -> ValidationResult {
   let root = Schema(schema)
   let validator = allOf(validators(root)(schema))
   let result = validator(value)

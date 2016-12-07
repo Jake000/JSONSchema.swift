@@ -250,7 +250,7 @@ func validateUniqueItems(_ value: Any) -> ValidationResult {
 
 func validatePropertiesLength(_ length: Int, comparator: @escaping ((Int, Int) -> (Bool)), error: Error) -> (_ value: Any)  -> ValidationResult {
   return { value in
-    if let value = value as? [String: Any], !comparator(length, value.count) {
+    if let value = value as? PropertiesType, !comparator(length, value.count) {
       return .invalid([error])
     }
     return .valid
@@ -259,7 +259,7 @@ func validatePropertiesLength(_ length: Int, comparator: @escaping ((Int, Int) -
 
 func validateRequired(_ required: [String]) -> (_ value: Any)  -> ValidationResult {
   return { value in
-    if let value = value as? [String: Any], !required.contains(where: { !value.keys.contains($0) }) {
+    if let value = value as? PropertiesType, !required.contains(where: { !value.keys.contains($0) }) {
       return .valid
     }
     return .invalid([RequiredError(required: required)])
@@ -268,7 +268,7 @@ func validateRequired(_ required: [String]) -> (_ value: Any)  -> ValidationResu
 
 func validateProperties(_ properties: [String: Validator]?, patternProperties: [String: Validator]?, additionalProperties: Validator?) -> (_ value: Any) -> ValidationResult {
   return { value in
-    guard let value = value as? [String: Any] else { return .valid }
+    guard let value = value as? PropertiesType else { return .valid }
     
     var keys: Set<String> = []
     var results: [ValidationResult] = []
@@ -305,7 +305,7 @@ func validateProperties(_ properties: [String: Validator]?, patternProperties: [
 
 func validateDependency(_ key: String, validator: @escaping LegacyValidator) -> (_ value: Any) -> Bool {
   return { value in
-    guard let value = value as? [String: Any] else { return true }
+    guard let value = value as? PropertiesType else { return true }
     if let _ = value[key] {
       return validator(value)
     }
@@ -315,7 +315,7 @@ func validateDependency(_ key: String, validator: @escaping LegacyValidator) -> 
 
 func validateDependencies(_ key: String, dependencies: [String]) -> (_ value: Any) -> Bool {
   return { value in
-    guard let value = value as? [String: Any], let _ = value[key] else { return true }
+    guard let value = value as? PropertiesType, let _ = value[key] else { return true }
     if dependencies.contains(where: { value[$0] == nil }) {
       return false
     }
